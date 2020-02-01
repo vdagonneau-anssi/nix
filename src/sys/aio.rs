@@ -336,7 +336,7 @@ impl<'a> AioCb<'a> {
     /// # use nix::sys::signal::SigevNotify;
     /// # use std::{thread, time};
     /// # use std::io::Write;
-    /// # use std::os::unix::io::As>RawFd;
+    /// # use std::os::unix::io::AsRawFd;
     /// # use tempfile::tempfile;
     /// # fn main() {
     /// const INITIAL: &[u8] = b"abcdef123456";
@@ -763,8 +763,14 @@ impl<'a> AioCb<'a> {
     }
 
     /// Update the notification settings for an existing `aiocb`
-    pub fn set_sigev_notify(&mut self, sigev_notify: SigevNotify) {
-        self.aiocb.aio_sigevent = SigEvent::new(sigev_notify).sigevent();
+    pub fn set_sigev_notify(self: &mut Pin<Box<Self>>,
+                            sigev_notify: SigevNotify)
+    {
+        // Safe because we don't move any of the data
+        let selfp = unsafe {
+            self.as_mut().get_unchecked_mut()
+        };
+        selfp.aiocb.aio_sigevent = SigEvent::new(sigev_notify).sigevent();
     }
 
     /// Cancels an outstanding AIO request.
@@ -1085,7 +1091,7 @@ pub fn aio_cancel_all(fd: RawFd) -> Result<AioCancelStat> {
 ///     SigevNotify::SigevNone,
 ///     LioOpcode::LIO_NOP);
 /// aiocb.write().unwrap();
-/// aio_suspend(&[&aiocb], None).expect("aio_suspend failed");
+/// aio_suspend(&[aiocb.as_ref()], None).expect("aio_suspend failed");
 /// assert_eq!(aiocb.aio_return().unwrap() as usize, WBUF.len());
 /// # }
 /// ```
