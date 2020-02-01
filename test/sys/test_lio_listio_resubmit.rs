@@ -74,16 +74,17 @@ fn test_lio_listio_resubmit() {
     }).collect::<Vec<_>>();
 
     let mut liocbs = (0..num_listios).map(|i| {
-        let mut liocb = LioCb::with_capacity(ops_per_listio);
+        let mut builder = LioCbBuilder::with_capacity(ops_per_listio);
         for j in 0..ops_per_listio {
             let offset = (BYTES_PER_OP * (i * ops_per_listio + j)) as off_t;
-            liocb.emplace_slice(f.as_raw_fd(),
+            builder = builder.emplace_slice(f.as_raw_fd(),
                                 offset,
                                 &buffer_set[i][j][..],
                                 0,   //priority
                                 SigevNotify::SigevNone,
                                 LioOpcode::LIO_WRITE);
         }
+        let mut liocb = builder.finish();
         let mut err = liocb.listio(LioMode::LIO_NOWAIT, SigevNotify::SigevNone);
         while err == Err(Error::Sys(Errno::EIO)) ||
               err == Err(Error::Sys(Errno::EAGAIN)) ||

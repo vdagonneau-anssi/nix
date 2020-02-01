@@ -157,6 +157,8 @@ pub struct AioCb<'a> {
     ///
     /// Used to keep buffers from `Drop`'ing, and may be returned once the
     /// `AioCb` is completed by [`buffer`](#method.buffer).
+    // XXX This is probably not necessary in the world of async/await.  Consider
+    // removing it, along with related methods.
     buffer: Buffer<'a>,
     _pin: std::marker::PhantomPinned
 }
@@ -1139,7 +1141,7 @@ pub struct LioCb<'a> {
     ///
     /// [`AioCb`]: struct.AioCb.html
     /// [`listio`]: #method.listio
-    pub aiocbs: Vec<AioCb<'a>>,
+    pub aiocbs: Box<[AioCb<'a>]>,
 
     /// The actual list passed to `libc::lio_listio`.
     ///
@@ -1155,31 +1157,6 @@ pub struct LioCb<'a> {
 
 #[cfg(not(any(target_os = "ios", target_os = "macos")))]
 impl<'a> LioCb<'a> {
-    /// Initialize an empty `LioCb`
-    pub fn with_capacity(capacity: usize) -> LioCb<'a> {
-        LioCb {
-            aiocbs: Vec::with_capacity(capacity),
-            list: Vec::with_capacity(capacity),
-            results: Vec::with_capacity(capacity)
-        }
-    }
-
-    pub fn emplace_slice(&mut self, fd: RawFd, offs: off_t, buf: &'a [u8],
-                         prio: libc::c_int, sigev_notify: SigevNotify,
-                         opcode: LioOpcode)
-    {
-        self.aiocbs.push(AioCb::from_slice_unpinned(fd, offs, buf, prio,
-                                                    sigev_notify, opcode));
-    }
-
-    pub fn emplace_mut_slice(&mut self, fd: RawFd, offs: off_t,
-                             buf: &'a mut [u8], prio: libc::c_int,
-                             sigev_notify: SigevNotify, opcode: LioOpcode)
-    {
-        self.aiocbs.push(AioCb::from_mut_slice_unpinned(fd, offs, buf, prio,
-                                                        sigev_notify, opcode));
-    }
-
     /// Submits multiple asynchronous I/O requests with a single system call.
     ///
     /// They are not guaranteed to complete atomically, and the order in which
@@ -1208,13 +1185,15 @@ impl<'a> LioCb<'a> {
     /// # fn main() {
     /// const WBUF: &[u8] = b"abcdef123456";
     /// let mut f = tempfile().unwrap();
-    /// let mut liocb = LioCb::with_capacity(1);
-    /// liocb.aiocbs.push(AioCb::from_slice( f.as_raw_fd(),
-    ///     2,   //offset
-    ///     WBUF,
-    ///     0,   //priority
-    ///     SigevNotify::SigevNone,
-    ///     LioOpcode::LIO_WRITE));
+    /// let mut liocb = LioCbBuilder::with_capacity(1)
+    ///     .emplace_slice(
+    ///         f.as_raw_fd(),
+    ///         2,   //offset
+    ///         WBUF,
+    ///         0,   //priority
+    ///         SigevNotify::SigevNone,
+    ///         LioOpcode::LIO_WRITE
+    ///     ).finish();
     /// liocb.listio(LioMode::LIO_WAIT,
     ///              SigevNotify::SigevNone).unwrap();
     /// assert_eq!(liocb.aio_return(0).unwrap() as usize, WBUF.len());
@@ -1232,7 +1211,7 @@ impl<'a> LioCb<'a> {
         let sigev = SigEvent::new(sigev_notify);
         let sigevp = &mut sigev.sigevent() as *mut libc::sigevent;
         self.list.clear();
-        for a in &mut self.aiocbs {
+        for a in &mut self.aiocbs.iter_mut() {
             a.in_progress = true;
             self.list.push(a as *mut AioCb<'a>
                              as *mut libc::aiocb);
@@ -1268,13 +1247,15 @@ impl<'a> LioCb<'a> {
     /// # fn main() {
     /// const WBUF: &[u8] = b"abcdef123456";
     /// let mut f = tempfile().unwrap();
-    /// let mut liocb = LioCb::with_capacity(1);
-    /// liocb.aiocbs.push(AioCb::from_slice( f.as_raw_fd(),
-    ///     2,   //offset
-    ///     WBUF,
-    ///     0,   //priority
-    ///     SigevNotify::SigevNone,
-    ///     LioOpcode::LIO_WRITE));
+    /// let mut liocb = LioCbBuilder::with_capacity(1)
+    ///     .emplace_slice(
+    ///         f.as_raw_fd(),
+    ///         2,   //offset
+    ///         WBUF,
+    ///         0,   //priority
+    ///         SigevNotify::SigevNone,
+    ///         LioOpcode::LIO_WRITE
+    ///     ).finish();
     /// let mut err = liocb.listio(LioMode::LIO_WAIT, SigevNotify::SigevNone);
     /// while err == Err(Error::Sys(Errno::EIO)) ||
     ///       err == Err(Error::Sys(Errno::EAGAIN)) {
@@ -1375,13 +1356,89 @@ impl<'a> Debug for LioCb<'a> {
     }
 }
 
-//#[cfg(not(any(target_os = "ios", target_os = "macos")))]
-//impl<'a> From<Vec<AioCb<'a>>> for LioCb<'a> {
-    //fn from(src: Vec<AioCb<'a>>) -> LioCb<'a> {
-        //LioCb {
-            //list: Vec::with_capacity(src.capacity()),
-            //results: Vec::with_capacity(src.capacity()),
-            //aiocbs: src,
-        //}
-    //}
-//}
+/// Used to construct `LioCb`
+// This must be a separate class from LioCb due to pinning constraints.  LioCb
+// must use a boxed slice of AioCbs so they will have stable storage, but
+// LioCbBuilder must use a Vec to make construction possible when the final size
+// is unknown.
+#[derive(Debug)]
+pub struct LioCbBuilder<'a> {
+    /// A collection of [`AioCb`]s.
+    ///
+    /// [`AioCb`]: struct.AioCb.html
+    pub aiocbs: Vec<AioCb<'a>>,
+}
+
+impl<'a> LioCbBuilder<'a> {
+    /// Initialize an empty `LioCb`
+    pub fn with_capacity(capacity: usize) -> LioCbBuilder<'a> {
+        LioCbBuilder {
+            aiocbs: Vec::with_capacity(capacity),
+        }
+    }
+
+    /// Add a new operation on an immutable slice to the [`LioCb`] under
+    /// construction.
+    ///
+    /// Arguments are the same as for [`AioCb::from_slice`]
+    ///
+    /// [`LioCb`]: struct.LioCb.html
+    /// [`AioCb::from_slice`]: struct.AioCb.html#method.from_slice
+    pub fn emplace_slice(mut self, fd: RawFd, offs: off_t, buf: &'a [u8],
+                         prio: libc::c_int, sigev_notify: SigevNotify,
+                         opcode: LioOpcode) -> Self
+    {
+        self.aiocbs.push(AioCb::from_slice_unpinned(fd, offs, buf, prio,
+                                                    sigev_notify, opcode));
+        self
+    }
+
+    /// Add a new operation on a mutable slice to the [`LioCb`] under
+    /// construction.
+    ///
+    /// Arguments are the same as for [`AioCb::from_mut_slice`]
+    ///
+    /// [`LioCb`]: struct.LioCb.html
+    /// [`AioCb::from_mut_slice`]: struct.AioCb.html#method.from_mut_slice
+    pub fn emplace_mut_slice(mut self, fd: RawFd, offs: off_t,
+                             buf: &'a mut [u8], prio: libc::c_int,
+                             sigev_notify: SigevNotify, opcode: LioOpcode)
+        -> Self
+    {
+        self.aiocbs.push(AioCb::from_mut_slice_unpinned(fd, offs, buf, prio,
+                                                        sigev_notify, opcode));
+        self
+    }
+
+    /// Finalize this [`LioCb`].
+    ///
+    /// Afterwards it will be possible to issue the operations with
+    /// [`LioCb::listio`].  Conversely, it will no longer be possible to add new
+    /// operations with [`LioCb::emplace_slice`] or
+    /// [`LioCb::emplace_mut_slice`].
+    ///
+    /// [`LioCb::listio`]: struct.LioCb.html#method.listio
+    /// [`LioCb::from_mut_slice`]: struct.LioCb.html#method.from_mut_slice
+    /// [`LioCb::from_slice`]: struct.LioCb.html#method.from_slice
+    pub fn finish(self) -> LioCb<'a> {
+        let len = self.aiocbs.len();
+        LioCb {
+            aiocbs: self.aiocbs.into(),
+            list: Vec::with_capacity(len),
+            results: Vec::with_capacity(len)
+        }
+    }
+}
+
+#[cfg(test)]
+mod t {
+    use super::*;
+    use assert_impl::assert_impl;
+
+    // It's important that `LioCb` be `UnPin`.  The tokio-file crate relies on
+    // it.
+    #[test]
+    fn liocb_is_unpin() {
+        assert_impl!(Unpin: LioCb);
+    }
+}

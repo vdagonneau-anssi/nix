@@ -22,6 +22,9 @@ extern crate bitflags;
 extern crate cfg_if;
 extern crate void;
 
+#[cfg(test)]
+extern crate assert_impl;
+
 // Re-exported external crates
 pub extern crate libc;
 

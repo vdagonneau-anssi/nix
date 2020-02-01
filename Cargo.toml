@@ -25,6 +25,7 @@ void = "1.0.2"
 cc = "1"
 
 [dev-dependencies]
+assert-impl = "0.1"
 bytes = "0.4.8"
 lazy_static = "1.2"
 rand = "0.6"

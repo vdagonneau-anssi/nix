@@ -509,19 +509,22 @@ fn test_liocb_listio_wait() {
     f.write_all(INITIAL).unwrap();
 
     {
-        let mut liocb = LioCb::with_capacity(2);
-        liocb.emplace_slice(f.as_raw_fd(),
-                            2,   //offset
-                            WBUF,
-                            0,   //priority
-                            SigevNotify::SigevNone,
-                            LioOpcode::LIO_WRITE);
-        liocb.emplace_mut_slice(f.as_raw_fd(),
-                                8,   //offset
-                                &mut rbuf,
-                                0,   //priority
-                                SigevNotify::SigevNone,
-                                LioOpcode::LIO_READ);
+        let mut liocb = LioCbBuilder::with_capacity(2)
+            .emplace_slice(
+                f.as_raw_fd(),
+                2,   //offset
+                WBUF,
+                0,   //priority
+                SigevNotify::SigevNone,
+                LioOpcode::LIO_WRITE
+            ).emplace_mut_slice(
+                f.as_raw_fd(),
+                8,   //offset
+                &mut rbuf,
+                0,   //priority
+                SigevNotify::SigevNone,
+                LioOpcode::LIO_READ
+            ).finish();
         let err = liocb.listio(LioMode::LIO_WAIT, SigevNotify::SigevNone);
         err.expect("lio_listio");
 
@@ -553,19 +556,22 @@ fn test_liocb_listio_nowait() {
     f.write_all(INITIAL).unwrap();
 
     {
-        let mut liocb = LioCb::with_capacity(2);
-        liocb.emplace_slice(f.as_raw_fd(),
-                            2,   //offset
-                            WBUF,
-                            0,   //priority
-                            SigevNotify::SigevNone,
-                            LioOpcode::LIO_WRITE);
-        liocb.emplace_mut_slice(f.as_raw_fd(),
-                                8,   //offset
-                                &mut rbuf,
-                                0,   //priority
-                                SigevNotify::SigevNone,
-                                LioOpcode::LIO_READ);
+        let mut liocb = LioCbBuilder::with_capacity(2)
+            .emplace_slice(
+                f.as_raw_fd(),
+                2,   //offset
+                WBUF,
+                0,   //priority
+                SigevNotify::SigevNone,
+                LioOpcode::LIO_WRITE
+            ).emplace_mut_slice(
+                f.as_raw_fd(),
+                8,   //offset
+                &mut rbuf,
+                0,   //priority
+                SigevNotify::SigevNone,
+                LioOpcode::LIO_READ
+            ).finish();
         let err = liocb.listio(LioMode::LIO_NOWAIT, SigevNotify::SigevNone);
         err.expect("lio_listio");
 
@@ -606,20 +612,22 @@ fn test_liocb_listio_signal() {
     f.write_all(INITIAL).unwrap();
 
     {
-        let mut liocb = LioCb::with_capacity(2);
-        liocb.emplace_slice(f.as_raw_fd(),
-                            2,   //offset
-                            WBUF,
-                            0,   //priority
-                            SigevNotify::SigevNone,
-                            LioOpcode::LIO_WRITE);
-
-        liocb.emplace_mut_slice(f.as_raw_fd(),
-                                8,   //offset
-                                &mut rbuf,
-                                0,   //priority
-                                SigevNotify::SigevNone,
-                                LioOpcode::LIO_READ);
+        let mut liocb = LioCbBuilder::with_capacity(2)
+            .emplace_slice(
+                f.as_raw_fd(),
+                2,   //offset
+                WBUF,
+                0,   //priority
+                SigevNotify::SigevNone,
+                LioOpcode::LIO_WRITE
+            ).emplace_mut_slice(
+                f.as_raw_fd(),
+                8,   //offset
+                &mut rbuf,
+                0,   //priority
+                SigevNotify::SigevNone,
+                LioOpcode::LIO_READ
+            ).finish();
         SIGNALED.store(false, Ordering::Relaxed);
         unsafe { sigaction(Signal::SIGUSR2, &sa) }.unwrap();
         let err = liocb.listio(LioMode::LIO_NOWAIT, sigev_notify);
@@ -650,12 +658,14 @@ fn test_liocb_listio_read_immutable() {
     let f = tempfile().unwrap();
 
 
-    let mut liocb = LioCb::with_capacity(1);
-    liocb.emplace_slice(f.as_raw_fd(),
-                        2,   //offset
-                        rbuf,
-                        0,   //priority
-                        SigevNotify::SigevNone,
-                        LioOpcode::LIO_READ);
+    let mut liocb = LioCbBuilder::with_capacity(1)
+        .emplace_slice(
+            f.as_raw_fd(),
+            2,   //offset
+            rbuf,
+            0,   //priority
+            SigevNotify::SigevNone,
+            LioOpcode::LIO_READ
+        ).finish();
     let _ = liocb.listio(LioMode::LIO_NOWAIT, SigevNotify::SigevNone);
 }
