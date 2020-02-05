@@ -21,17 +21,6 @@
 //! [`aio_cancel_all`](fn.aio_cancel_all.html), though the operating system may
 //! not support this for all filesystems and devices.
 
-// TODO: is there any way to make constructors that don't require using the
-// heap?  Anything that could return a pinned stack variable?
-// The only way i can see is for the constructor to return a plain AioCb.  The
-// caller can then pin it like
-// let a = AioCb::from_fool
-// let pinned = Pin::new(&a)
-// and use it with any method taking pinned types.  But there are two problems:
-// 1) Nothing prevents the caller from calling aio_read on one pinned pointer,
-//    dropping it, moving the aiocb, createing a new pinned pointer, and calling
-//    aio_error on that.
-// 2) It's more typing for almost all consumers, who will box the aiocb anyway.
 use {Error, Result};
 use errno::Errno;
 use std::os::unix::io::RawFd;
@@ -143,11 +132,9 @@ impl<'a> Debug for Buffer<'a> {
 
 /// AIO Control Block.
 ///
-/// The basic tructure used by all aio functions.  Each `AioCb` represents one
+/// The basic structure used by all aio functions.  Each `AioCb` represents one
 /// I/O request.
 pub struct AioCb<'a> {
-    // TODO: try using pin-project! to mark the aiocb field as structurally
-    // pinned, but not other fields.
     aiocb: libc::aiocb,
     /// Tracks whether the buffer pointed to by `libc::aiocb.aio_buf` is mutable
     mutable: bool,
@@ -284,6 +271,7 @@ impl<'a> AioCb<'a> {
         })
     }
 
+    // Private helper
     fn from_mut_slice_unpinned(fd: RawFd, offs: off_t, buf: &'a mut [u8],
                           prio: libc::c_int, sigev_notify: SigevNotify,
                           opcode: LioOpcode) -> AioCb<'a>
@@ -677,6 +665,7 @@ impl<'a> AioCb<'a> {
         })
     }
 
+    // Private helper
     fn from_slice_unpinned(fd: RawFd, offs: off_t, buf: &'a [u8],
                            prio: libc::c_int, sigev_notify: SigevNotify,
                            opcode: LioOpcode) -> AioCb
@@ -829,7 +818,7 @@ impl<'a> AioCb<'a> {
             let selfp = self.as_mut().get_unchecked_mut();
             libc::aio_cancel(selfp.aiocb.aio_fildes, &mut selfp.aiocb)
         };
-        match r { 
+        match r {
             libc::AIO_CANCELED => Ok(AioCancelStat::AioCanceled),
             libc::AIO_NOTCANCELED => Ok(AioCancelStat::AioNotCanceled),
             libc::AIO_ALLDONE => Ok(AioCancelStat::AioAllDone),
@@ -955,15 +944,16 @@ impl<'a> AioCb<'a> {
     /// [aio_read](http://pubs.opengroup.org/onlinepubs/9699919799/functions/aio_read.html)
     pub fn read(self: &mut Pin<Box<Self>>) -> Result<()> {
         assert!(self.mutable, "Can't read into an immutable buffer");
-        unsafe {
-            let selfp = self.as_mut().get_unchecked_mut();
-            Errno::result({
-                let p: *mut libc::aiocb = &mut selfp.aiocb;
-                libc::aio_read(p)
-            }).map(|_| {
-                selfp.in_progress = true;
-            })
-        }
+        // Safe because we don't move anything
+        let selfp = unsafe {
+            self.as_mut().get_unchecked_mut()
+        };
+        Errno::result({
+            let p: *mut libc::aiocb = &mut selfp.aiocb;
+            unsafe { libc::aio_read(p) }
+        }).map(|_| {
+            selfp.in_progress = true;
+        })
     }
 
     /// Returns the `SigEvent` stored in the `AioCb`
@@ -1003,15 +993,16 @@ impl<'a> AioCb<'a> {
     ///
     /// [aio_write](http://pubs.opengroup.org/onlinepubs/9699919799/functions/aio_write.html)
     pub fn write(self: &mut Pin<Box<Self>>) -> Result<()> {
-        unsafe {
-            let selfp = self.as_mut().get_unchecked_mut();
-            Errno::result({
-                let p: *mut libc::aiocb = &mut selfp.aiocb;
-                libc::aio_write(p)
-            }).map(|_| {
-                selfp.in_progress = true;
-            })
-        }
+        // Safe because we don't move anything
+        let selfp = unsafe {
+            self.as_mut().get_unchecked_mut()
+        };
+        Errno::result({
+            let p: *mut libc::aiocb = &mut selfp.aiocb;
+            unsafe{ libc::aio_write(p) }
+        }).map(|_| {
+            selfp.in_progress = true;
+        })
     }
 }
 
@@ -1141,6 +1132,7 @@ pub struct LioCb<'a> {
     ///
     /// [`AioCb`]: struct.AioCb.html
     /// [`listio`]: #method.listio
+    // XXX: should make this non-public so the user can't swap?
     pub aiocbs: Box<[AioCb<'a>]>,
 
     /// The actual list passed to `libc::lio_listio`.

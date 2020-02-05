@@ -62,14 +62,14 @@ fn test_cancel() {
     let wbuf: &[u8] = b"CDEF";
 
     let f = tempfile().unwrap();
-    let mut aiocb = Box::pin(AioCb::from_slice( f.as_raw_fd(),
+    let mut aiocb = AioCb::from_slice( f.as_raw_fd(),
                             0,   //offset
                             wbuf,
                             0,   //priority
                             SigevNotify::SigevNone,
-                            LioOpcode::LIO_NOP));
-    aiocb.as_mut().write().unwrap();
-    let err = aiocb.as_mut().error();
+                            LioOpcode::LIO_NOP);
+    aiocb.write().unwrap();
+    let err = aiocb.error();
     assert!(err == Ok(()) || err == Err(Error::from(Errno::EINPROGRESS)));
 
     let cancelstat = aiocb.cancel();
@@ -224,13 +224,13 @@ fn test_read_error() {
     let mut rbuf = vec![0; 4];
     let mut f = tempfile().unwrap();
     f.write_all(INITIAL).unwrap();
-    let mut aiocb = Box::pin(AioCb::from_mut_slice( f.as_raw_fd(),
+    let mut aiocb = AioCb::from_mut_slice( f.as_raw_fd(),
                            -1,   //an invalid offset
                            &mut rbuf,
                            0,   //priority
                            SigevNotify::SigevNone,
-                           LioOpcode::LIO_NOP));
-    assert!(aiocb.as_mut().read().is_err());
+                           LioOpcode::LIO_NOP);
+    assert!(aiocb.read().is_err());
 }
 
 // Tests from_mut_slice
@@ -243,13 +243,13 @@ fn test_read_into_mut_slice() {
     let mut f = tempfile().unwrap();
     f.write_all(INITIAL).unwrap();
     {
-        let mut aiocb = Box::pin(AioCb::from_mut_slice( f.as_raw_fd(),
+        let mut aiocb = AioCb::from_mut_slice( f.as_raw_fd(),
                                2,   //offset
                                &mut rbuf,
                                0,   //priority
                                SigevNotify::SigevNone,
-                               LioOpcode::LIO_NOP));
-        aiocb.as_mut().read().unwrap();
+                               LioOpcode::LIO_NOP);
+        aiocb.read().unwrap();
 
         let err = poll_aio(&mut aiocb);
         assert_eq!(err, Ok(()));
@@ -271,7 +271,6 @@ fn test_read_into_pointer() {
     {
         // Safety: ok because rbuf lives until after poll_aio
         let mut aiocb = unsafe {
-            Box::pin(
             AioCb::from_mut_ptr( f.as_raw_fd(),
                                  2,   //offset
                                  rbuf.as_mut_ptr() as *mut c_void,
@@ -279,9 +278,8 @@ fn test_read_into_pointer() {
                                  0,   //priority
                                  SigevNotify::SigevNone,
                                  LioOpcode::LIO_NOP)
-            )
         };
-        aiocb.as_mut().read().unwrap();
+        aiocb.read().unwrap();
 
         let err = poll_aio(&mut aiocb);
         assert_eq!(err, Ok(()));
@@ -299,13 +297,13 @@ fn test_read_into_pointer() {
 fn test_read_immutable_buffer() {
     let rbuf: &[u8] = b"CDEF";
     let f = tempfile().unwrap();
-    let mut aiocb = Box::pin(AioCb::from_slice( f.as_raw_fd(),
+    let mut aiocb = AioCb::from_slice( f.as_raw_fd(),
                            2,   //offset
                            rbuf,
                            0,   //priority
                            SigevNotify::SigevNone,
-                           LioOpcode::LIO_NOP));
-    aiocb.as_mut().read().unwrap();
+                           LioOpcode::LIO_NOP);
+    aiocb.read().unwrap();
 }
 
 
@@ -379,12 +377,12 @@ fn test_read_bytes_mut_small() {
     let mut f = tempfile().unwrap();
     f.write_all(INITIAL).unwrap();
 
-    let mut aiocb = Box::pin(AioCb::from_boxed_mut_slice( f.as_raw_fd(),
+    let mut aiocb = AioCb::from_boxed_mut_slice( f.as_raw_fd(),
                            2,   //offset
                            rbuf,
                            0,   //priority
                            SigevNotify::SigevNone,
-                           LioOpcode::LIO_NOP));
+                           LioOpcode::LIO_NOP);
     aiocb.read().unwrap();
 
     let err = poll_aio(&mut aiocb);
