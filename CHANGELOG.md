@@ -6,6 +6,18 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## [Unreleased] - ReleaseDate
 ### Added
 ### Changed
+- `AioCb` is now always pinned.  Once a `libc::aiocb` gets sent to the kernel,
+  its address in memory must not change.  Nix now enforces that by using
+  `std::pin`.  Most users won't need to change anything, except when using
+  `aio_suspend`.  See that methods documentation for the new usage.
+  (#[TODO](https://github.com/nix-rust/nix/pull/TODO))
+
+- `LioCb` is now constructed using a distinct `LioCbBuilder` struct.  This
+  avoids a soundness issue with the old `LioCb`.  Usage is similar but
+  construction now uses the builder pattern.  See the documentation for
+  details.
+  (#[TODO](https://github.com/nix-rust/nix/pull/TODO))
+
 ### Fixed
 ### Removed
 
